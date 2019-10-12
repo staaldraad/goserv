@@ -77,18 +77,28 @@ func genCert() {
 	fmt.Println("[*] Certificate files generated")
 }
 
+func redirRequest(w http.ResponseWriter, req *http.Request) {
+    dst := req.URL.Query().Get("r")
+    fmt.Printf("[%s][Accepted -  %s][From: %s][Redirect: %s]\n", time.Now(),req.URL, req.RemoteAddr,dst)
+    http.Redirect(w,req,dst,302)
+}
+
 func logRequest(w http.ResponseWriter, req *http.Request) {
+    t := time.Now().Format(time.UnixDate)
+    fmt.Printf("[%s][Accepted -  %s][From: %s]\n", t, req.URL, req.RemoteAddr)
+
 	if hostHddrs == true {
-		fmt.Printf("[%s][Accepted -  %s]\n", req.RemoteAddr,req.URL)
+        fmt.Println("---Headers---")
 		for k, v := range req.Header {
 			fmt.Printf("%s : %s\n", k, v)
 		}
+        fmt.Println("----------")
 	}
 	if req.Method == "POST" {
 		req.ParseForm()
 
 		if len(req.PostForm) > 0 {
-			fmt.Printf("[POST]\n")
+			fmt.Println("-----Form POST-----")
 			for k, v := range req.PostForm {
 				fmt.Printf("%s = %s\n", k, v)
 			}
@@ -98,7 +108,8 @@ func logRequest(w http.ResponseWriter, req *http.Request) {
 			if err != nil && err != io.EOF {
 				fmt.Println(buf, err)
 			} else {
-				fmt.Printf("[POST]\n%s\n", buf)
+			    fmt.Println("-----POST-----")
+				fmt.Printf("\n%s\n", buf)
 			}
 		}
 		fmt.Fprintf(w, "")
@@ -148,6 +159,7 @@ func main() {
 	}
 
 	http.HandleFunc("/", logRequest)
+	http.HandleFunc("/redir/", redirRequest)
 
 	if *tlsPtr == true {
 		genCert()
