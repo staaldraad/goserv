@@ -83,6 +83,18 @@ func redirRequest(w http.ResponseWriter, req *http.Request) {
     http.Redirect(w,req,dst,302)
 }
 
+func redir2Request(w http.ResponseWriter, req *http.Request) {
+    dst := req.URL.Query().Get("r")
+    fmt.Printf("[%s][Accepted -  %s][From: %s][Redirect: %s]\n", time.Now(),req.URL, req.RemoteAddr,dst)
+    //http.Redirect(w,req,dst,302)
+    w.Header().Add("Location", "`curl `")
+    w.WriteHeader(302)
+
+	fmt.Fprintf(w, "ok")
+	return
+
+}
+
 func logRequest(w http.ResponseWriter, req *http.Request) {
     t := time.Now().Format(time.UnixDate)
     fmt.Printf("[%s][Accepted -  %s][From: %s]\n", t, req.URL, req.RemoteAddr)
@@ -136,6 +148,33 @@ func logRequest(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
+func uploadRequest(w http.ResponseWriter, req *http.Request) {
+    t := time.Now().Format(time.UnixDate)
+    fmt.Printf("[%s][Accepted -  %s][From: %s]\n", t, req.URL, req.RemoteAddr)
+
+	if req.Method == "GET" {
+        w.WriteHeader(200)
+		fmt.Fprintf(w, "ok")
+		return
+    } else {
+        file, _, err := req.FormFile("data")
+        if err != nil {
+            fmt.Println(err)
+            w.WriteHeader(500)
+            fmt.Fprintf(w, "ok")
+            return
+        }
+        defer file.Close()
+
+        // copy example
+        f, err := os.OpenFile(fmt.Sprintf("./upload_%d",time.Now().Unix()), os.O_WRONLY|os.O_CREATE, 0666)
+        defer f.Close()
+        io.Copy(f, file)
+   }
+        w.WriteHeader(200)
+		fmt.Fprintf(w, "ok")
+}
+
 func main() {
 	portPtr := flag.Int("p", 8080, "Port to use")
 	dirPtr := flag.String("d", "./", "The directory to share")
@@ -160,6 +199,8 @@ func main() {
 
 	http.HandleFunc("/", logRequest)
 	http.HandleFunc("/redir/", redirRequest)
+	http.HandleFunc("/redir2/", redir2Request)
+	http.HandleFunc("/upload/", uploadRequest)
 
 	if *tlsPtr == true {
 		genCert()
