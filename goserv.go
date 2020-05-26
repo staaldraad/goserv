@@ -6,7 +6,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/pem"
 	"flag"
 	"fmt"
 	"io"
@@ -21,25 +20,16 @@ import (
 var hostDir string
 var hostHddrs bool
 
-func genCert() {
-	if _, err := os.Stat(fmt.Sprintf("%s/cert.pem", hostDir)); err == nil {
-		if _, er := os.Stat(fmt.Sprintf("%s/key.pem", hostDir)); er == nil {
-			fmt.Println("[*] Found certificate files in directory. Using these.")
-			return
-		}
-	}
-	fmt.Println("[*] No certificate files found in directory. Generating new...")
-	s, _ := rand.Prime(rand.Reader, 2048)
+func genCert() ([]byte, *rsa.PrivateKey) {
+	s, _ := rand.Prime(rand.Reader, 128)
 	ca := &x509.Certificate{
 		SerialNumber: s,
 		Subject: pkix.Name{
-			Country:      []string{"UK"},
-			Organization: []string{"Org"},
-			CommonName:   "*.changeme.com",
+			Organization: []string{"Argo Incorporated"},
 		},
 		NotBefore:             time.Now(),
 		NotAfter:              time.Now().AddDate(10, 0, 0),
-		SubjectKeyId:          []byte{1, 2, 3, 4, 6},
+		SubjectKeyId:          []byte{1, 2, 3, 4, 5},
 		BasicConstraintsValid: true,
 		IsCA:                  true,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
@@ -52,37 +42,10 @@ func genCert() {
 	if err != nil {
 		fmt.Println("create ca failed", err)
 	}
-
-	kpemfile, err := os.Create("key.pem")
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-
-	cpemfile, err := os.Create("cert.pem")
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-
-	var pemkey = &pem.Block{
-		Type:  "RSA PRIVATE KEY",
-		Bytes: x509.MarshalPKCS1PrivateKey(priv)}
-	err = pem.Encode(kpemfile, pemkey)
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-
-	kpemfile.Close()
-	pem.Encode(cpemfile, &pem.Block{Type: "CERTIFICATE", Bytes: cab})
-	cpemfile.Close()
-
-	fmt.Println("[*] Certificate files generated")
+	return cab, priv
 }
 
-func genChildCert(ip, name string) {
-	cert, _ := tls.LoadX509KeyPair("cert.pem", "key.pem")
+func genChildCert(cert tls.Certificate, ip, name string) []byte {
 
 	parent, err := x509.ParseCertificate(cert.Certificate[0])
 
@@ -99,46 +62,18 @@ func genChildCert(ip, name string) {
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 	}
-
 	if ip != "" {
-		i := make([]net.IP, 0)
-		i = append(i, net.ParseIP(ip))
-		template.IPAddresses = i
+		is := make([]net.IP, 0)
+		is = append(is, net.ParseIP(ip))
+		template.IPAddresses = is
 	}
 	if name != "" {
 		template.DNSNames = []string{name}
 	}
 
-	priv, err := ioutil.ReadFile("key.pem")
-	if err != nil {
-		log.Fatalf("No RSA private key found, %w", err)
-	}
+	private := cert.PrivateKey.(*rsa.PrivateKey)
 
-	privPem, _ := pem.Decode(priv)
-	var privPemBytes []byte
-	if privPem.Type != "RSA PRIVATE KEY" {
-		log.Fatalf("RSA private key is of the wrong type %w", privPem.Type)
-	}
-	privPemBytes = privPem.Bytes
-	var private interface{}
-	if private, err = x509.ParsePKCS1PrivateKey(privPemBytes); err != nil {
-		log.Fatalf("Unable to parse RSA private key, %s", err)
-
-	}
-
-	pub, err := ioutil.ReadFile("cert.pem")
-	if err != nil {
-		log.Fatalf("No RSA private key found, %w", err)
-	}
-
-	pubPem, _ := pem.Decode(pub)
-	var pubPemBytes []byte
-	if pubPem.Type != "CERTIFICATE" {
-		log.Fatalf("RSA public key is of the wrong type %w", pubPem.Type)
-	}
-	pubPemBytes = pubPem.Bytes
-
-	certP, _ := x509.ParseCertificate(pubPemBytes)
+	certP, _ := x509.ParseCertificate(cert.Certificate[0])
 	public := certP.PublicKey.(*rsa.PublicKey)
 
 	cab, err := x509.CreateCertificate(rand.Reader, template, parent, public, private)
@@ -147,16 +82,8 @@ func genChildCert(ip, name string) {
 		os.Exit(1)
 	}
 
-	cpemfile, err := os.Create("ccert.pem")
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-
-	pem.Encode(cpemfile, &pem.Block{Type: "CERTIFICATE", Bytes: cab})
-	cpemfile.Close()
-
 	fmt.Println("[*] Child Certificate files generated")
+	return cab
 }
 
 func redirRequest(w http.ResponseWriter, req *http.Request) {
@@ -265,6 +192,8 @@ func main() {
 	mTLSPtr := flag.String("m", "", "client certificate to use for mtls")
 	namePtr := flag.String("name", "", "Server name to set in the TLS handshake")
 	ipPtr := flag.String("ip", "", "Server ip to set in the TLS handshake")
+	certPtr := flag.String("cert", "", "Path to cacert.pem certficate for TLS")
+	keyPtr := flag.String("key", "", "Path to key.pem for TLS")
 
 	flag.Parse()
 
@@ -289,11 +218,31 @@ func main() {
 	http.HandleFunc("/upload/", uploadRequest)
 
 	if *tlsPtr == true {
-		if *namePtr != "" || *ipPtr != "" {
-			genChildCert(*ipPtr, *namePtr)
-		} else {
-			genCert()
+		if *certPtr != "" && *keyPtr == "" {
+			fmt.Println("[FATAL] -key required when -cert is supplied")
+			return
 		}
+		var cert tls.Certificate
+		var err error
+		if *certPtr != "" {
+			cert, err = tls.LoadX509KeyPair(*certPtr, *keyPtr)
+			if err != nil {
+				fmt.Printf("[FATAL] - can't configure TLS: %s", err)
+				return
+			}
+		} else {
+			fmt.Println("[*] No certificate supplied generating cert")
+			cab, priv := genCert()
+			cert = tls.Certificate{
+				Certificate: [][]byte{cab},
+				PrivateKey:  priv,
+			}
+		}
+		if *namePtr != "" || *ipPtr != "" {
+			newCert := genChildCert(cert, *ipPtr, *namePtr)
+			cert.Certificate = [][]byte{newCert}
+		}
+
 		tlsConfig := &tls.Config{InsecureSkipVerify: true}
 		if *mTLSPtr != "" {
 			caCert, err := ioutil.ReadFile(*mTLSPtr)
@@ -306,15 +255,15 @@ func main() {
 			tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
 		}
 
+		tlsConfig.Certificates = []tls.Certificate{cert}
+
 		server := &http.Server{
 			Addr:      fmt.Sprintf(":%d", *portPtr),
 			TLSConfig: tlsConfig,
 		}
-		if *namePtr != "" {
-			err = server.ListenAndServeTLS("ccert.pem", "key.pem")
-		} else {
-			err = server.ListenAndServeTLS("cert.pem", "key.pem")
-		}
+
+		err = server.ListenAndServeTLS("", "")
+
 	} else {
 		err = http.ListenAndServe(fmt.Sprintf(":%d", *portPtr), nil)
 	}
