@@ -94,13 +94,13 @@ func redirRequest(w http.ResponseWriter, req *http.Request) {
 }
 
 func redir2Request(w http.ResponseWriter, req *http.Request) {
-	dst := req.URL.Query().Get("r")
-	fmt.Printf("[%s][Accepted -  %s][From: %s][Redirect: %s]\n", time.Now(), req.URL, req.RemoteAddr, dst)
+	//dst := req.URL.Query().Get("r")
+	fmt.Printf("[%s][Accepted -  %s][From: %s][Redirect]\n", time.Now(), req.URL, req.RemoteAddr)
 	//http.Redirect(w,req,dst,302)
-	w.Header().Add("Location", "`curl `")
+	w.Header().Add("Location", "https://rev.conch.cloud:8441/redir")
 	w.WriteHeader(302)
 
-	fmt.Fprintf(w, "ok")
+	fmt.Fprintf(w, "302")
 	return
 
 }
@@ -168,14 +168,17 @@ func uploadRequest(w http.ResponseWriter, req *http.Request) {
 		fmt.Fprintf(w, "OK")
 		return
 	} else {
+		bodyAsData := false
 		file, _, err := req.FormFile("data")
+
 		if err != nil {
-			fmt.Println(err)
-			w.WriteHeader(500)
-			fmt.Fprintf(w, "NOT OK")
-			return
+			// ok not form data, just save the body as data
+			bodyAsData = true
+			fmt.Printf("[x] Error in parsing upload form - this is not world ending: %s\n", err)
+
+		} else {
+			defer file.Close()
 		}
-		defer file.Close()
 
 		// copy example
 		f, err := os.OpenFile(fmt.Sprintf("./upload_%d_%s", time.Now().Unix(), fname), os.O_WRONLY|os.O_CREATE, 0666)
@@ -186,8 +189,15 @@ func uploadRequest(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		defer f.Close()
-		io.Copy(f, file)
+		if !bodyAsData {
+			io.Copy(f, file)
+		} else {
+			io.Copy(f, req.Body)
+			defer req.Body.Close()
+		}
+		fmt.Printf("[+] Upload saved to [%s]\n", f.Name())
 	}
+
 	w.WriteHeader(200)
 	fmt.Fprintf(w, "OK")
 }
