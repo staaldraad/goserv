@@ -81,16 +81,14 @@ func genCert() {
 	fmt.Println("[*] Certificate files generated")
 }
 
-func genChildCert(ip string) {
+func genChildCert(ip, name string) {
 	cert, _ := tls.LoadX509KeyPair("cert.pem", "key.pem")
 
 	parent, err := x509.ParseCertificate(cert.Certificate[0])
 
 	s, _ := rand.Prime(rand.Reader, 128)
-	i := make([]net.IP, 0)
-	i = append(i, net.ParseIP(ip))
+
 	template := &x509.Certificate{
-		IPAddresses:           i,
 		SerialNumber:          s,
 		Subject:               pkix.Name{Organization: []string{"Argo Incorporated"}},
 		Issuer:                pkix.Name{Organization: []string{"Argo Incorporated"}},
@@ -100,6 +98,15 @@ func genChildCert(ip string) {
 		IsCA:                  false,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+	}
+
+	if ip != "" {
+		i := make([]net.IP, 0)
+		i = append(i, net.ParseIP(ip))
+		template.IPAddresses = i
+	}
+	if name != "" {
+		template.DNSNames = []string{name}
 	}
 
 	priv, err := ioutil.ReadFile("key.pem")
@@ -257,6 +264,7 @@ func main() {
 	hdrsPtr := flag.Bool("headers", false, "Print incomming headers")
 	mTLSPtr := flag.String("m", "", "client certificate to use for mtls")
 	namePtr := flag.String("name", "", "Server name to set in the TLS handshake")
+	ipPtr := flag.String("ip", "", "Server ip to set in the TLS handshake")
 
 	flag.Parse()
 
@@ -281,8 +289,8 @@ func main() {
 	http.HandleFunc("/upload/", uploadRequest)
 
 	if *tlsPtr == true {
-		if *namePtr != "" {
-			genChildCert(*namePtr)
+		if *namePtr != "" || *ipPtr != "" {
+			genChildCert(*ipPtr, *namePtr)
 		} else {
 			genCert()
 		}
