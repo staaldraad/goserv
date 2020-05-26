@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -160,28 +161,35 @@ func logRequest(w http.ResponseWriter, req *http.Request) {
 func uploadRequest(w http.ResponseWriter, req *http.Request) {
 	t := time.Now().Format(time.UnixDate)
 	fmt.Printf("[%s][Accepted -  %s][From: %s]\n", t, req.URL, req.RemoteAddr)
+	fname := strings.TrimPrefix(req.URL.EscapedPath(), "/upload/")
 
 	if req.Method == "GET" {
 		w.WriteHeader(200)
-		fmt.Fprintf(w, "ok")
+		fmt.Fprintf(w, "OK")
 		return
 	} else {
 		file, _, err := req.FormFile("data")
 		if err != nil {
 			fmt.Println(err)
 			w.WriteHeader(500)
-			fmt.Fprintf(w, "ok")
+			fmt.Fprintf(w, "NOT OK")
 			return
 		}
 		defer file.Close()
 
 		// copy example
-		f, err := os.OpenFile(fmt.Sprintf("./upload_%d", time.Now().Unix()), os.O_WRONLY|os.O_CREATE, 0666)
+		f, err := os.OpenFile(fmt.Sprintf("./upload_%d_%s", time.Now().Unix(), fname), os.O_WRONLY|os.O_CREATE, 0666)
+		if err != nil {
+			fmt.Println(err)
+			w.WriteHeader(500)
+			fmt.Fprintf(w, "NOT OK")
+			return
+		}
 		defer f.Close()
 		io.Copy(f, file)
 	}
 	w.WriteHeader(200)
-	fmt.Fprintf(w, "ok")
+	fmt.Fprintf(w, "OK")
 }
 
 func main() {
@@ -261,9 +269,7 @@ func main() {
 			Addr:      fmt.Sprintf(":%d", *portPtr),
 			TLSConfig: tlsConfig,
 		}
-
 		err = server.ListenAndServeTLS("", "")
-
 	} else {
 		err = http.ListenAndServe(fmt.Sprintf(":%d", *portPtr), nil)
 	}
