@@ -221,7 +221,6 @@ func main() {
 			tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
 		}
 
-		tlsConfig.BuildNameToCertificate()
 		server := &http.Server{
 			Addr:      fmt.Sprintf(":%d", *portPtr),
 			TLSConfig: tlsConfig,
