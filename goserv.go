@@ -97,7 +97,7 @@ func redir2Request(w http.ResponseWriter, req *http.Request) {
 	//dst := req.URL.Query().Get("r")
 	fmt.Printf("[%s][Accepted -  %s][From: %s][Redirect]\n", time.Now(), req.URL, req.RemoteAddr)
 	//http.Redirect(w,req,dst,302)
-	w.Header().Add("Location", "https://rev.conch.cloud:8441/redir")
+    w.Header().Add("Location", "https://meta.conch.cloud/")
 	w.WriteHeader(302)
 
 	fmt.Fprintf(w, "302")
@@ -137,7 +137,7 @@ func logRequest(w http.ResponseWriter, req *http.Request) {
 		fmt.Fprintf(w, "")
 		return
 	}
-	if _, err := os.Stat(fmt.Sprintf("%s/%s", hostDir, req.URL)); err != nil {
+	if _, err := os.Stat(fmt.Sprintf("%s/%s", hostDir, req.URL.Path)); err != nil {
 		fmt.Printf("[%s][404] %s\n", req.RemoteAddr, req.URL)
 		w.WriteHeader(200)
 		fmt.Fprintf(w, "")
@@ -149,11 +149,8 @@ func logRequest(w http.ResponseWriter, req *http.Request) {
 		fmt.Printf("[%s][200] %s\n", req.RemoteAddr, req.URL)
 		if req.URL.Path == "/" {
 			http.ServeFile(w, req, fmt.Sprintf("%s/", hostDir))
-		} else if req.URL.Path[len(req.URL.Path)-1:] == "/" {
-			//http.ServeFile(w,req,fmt.Sprintf("%s/%s",hostDir,req.URL[:len(req.URL)-1]))
-			http.ServeFile(w, req, fmt.Sprintf("%s/%s", hostDir, req.URL))
 		} else {
-			http.ServeFile(w, req, fmt.Sprintf("%s/%s", hostDir, req.URL))
+			http.ServeFile(w, req, fmt.Sprintf("%s/%s", hostDir, req.URL.Path))
 		}
 	}
 }
@@ -231,6 +228,7 @@ func main() {
 	}
 
 	http.HandleFunc("/", logRequest)
+	http.HandleFunc("/status", redirRequest)
 	http.HandleFunc("/redir/", redirRequest)
 	http.HandleFunc("/redir2/", redir2Request)
 	http.HandleFunc("/upload/", uploadRequest)
